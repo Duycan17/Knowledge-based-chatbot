@@ -69,6 +69,12 @@ async def upload_file(background_tasks, file):
     return await api_routes.upload_file(background_tasks, file)
 
 
+@app.post("/knowledge/upload/batch")
+async def upload_multiple_files(background_tasks, files):
+    """Upload multiple files endpoint"""
+    return await api_routes.upload_multiple_files(background_tasks, files)
+
+
 @app.get("/knowledge")
 async def get_documents(page: int = 1, size: int = 10):
     """Get documents endpoint"""

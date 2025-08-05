@@ -97,6 +97,50 @@ curl -X POST "http://localhost:8000/knowledge/upload" \
 }
 ```
 
+#### POST /knowledge/upload/batch
+Upload nhiều file text cùng lúc và process thành embeddings.
+
+**Request:**
+```bash
+curl -X POST "http://localhost:8000/knowledge/upload/batch" \
+  -H "Content-Type: multipart/form-data" \
+  -F "files=@document1.txt" \
+  -F "files=@document2.txt" \
+  -F "files=@document3.txt"
+```
+
+**Response:**
+```json
+{
+  "message": "Batch upload completed. 2 successful, 1 failed",
+  "total_files": 3,
+  "successful_uploads": 2,
+  "failed_uploads": 1,
+  "uploads": [
+    {
+      "file_id": "uuid-1",
+      "filename": "document1.txt",
+      "status": "processing",
+      "message": "File uploaded successfully and processing started",
+      "file_size": 1024
+    },
+    {
+      "file_id": "uuid-2",
+      "filename": "document2.txt",
+      "status": "processing",
+      "message": "File uploaded successfully and processing started",
+      "file_size": 2048
+    }
+  ],
+  "errors": [
+    {
+      "filename": "document3.txt",
+      "error": "File size too large"
+    }
+  ]
+}
+```
+
 #### GET /knowledge
 Lấy danh sách documents với pagination.
 

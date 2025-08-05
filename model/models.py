@@ -88,6 +88,15 @@ class BatchDeleteResponse(BaseModel):
     results: Dict[str, Any]
 
 
+class BatchUploadResponse(BaseModel):
+    message: str
+    total_files: int
+    successful_uploads: int
+    failed_uploads: int
+    uploads: List[UploadResponse]
+    errors: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 # Database Models (for SQLAlchemy if needed)
 class Document:
     def __init__(

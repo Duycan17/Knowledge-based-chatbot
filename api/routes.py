@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from model.models import (
     DocumentResponse, DocumentListResponse, ChatRequest, ChatResponse,
-    AuditLogResponse, UploadResponse, ErrorResponse, BatchDeleteResponse
+    AuditLogResponse, UploadResponse, ErrorResponse, BatchDeleteResponse, BatchUploadResponse
 )
 from service.knowledge_base_service import KnowledgeBaseService
 
@@ -74,6 +74,117 @@ class APIRoutes:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Error uploading file: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+    async def upload_multiple_files(self, background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)):
+        """
+        Upload nhiều file text và process thành embeddings
+        
+        - **files**: List các file text (.txt, .md, .csv, .json) để upload
+        - **max_size**: 10MB per file
+        - **max_files**: 50 files per request
+        """
+        try:
+            # Validate input
+            if not files:
+                raise HTTPException(status_code=400, detail="No files provided")
+            
+            # Limit number of files
+            if len(files) > 50:
+                raise HTTPException(status_code=400, detail="Too many files. Maximum 50 files allowed per request.")
+            
+            uploads = []
+            errors = []
+            successful_count = 0
+            failed_count = 0
+            
+            from config.settings import settings
+            from utils.file_utils import create_upload_directory, generate_safe_filename, get_file_path
+            
+            # Create upload directory
+            create_upload_directory(settings.upload_dir)
+            
+            for file in files:
+                try:
+                    # Validate file
+                    if not file.filename:
+                        errors.append({
+                            "filename": "unknown",
+                            "error": "No filename provided"
+                        })
+                        failed_count += 1
+                        continue
+                    
+                    # Get file size
+                    file_size = 0
+                    content = await file.read()
+                    file_size = len(content)
+                    
+                    # Validate file using FileProcessingService
+                    from service.file_processor import FileProcessingService
+                    file_processor = FileProcessingService()
+                    is_valid, validation_message = await file_processor.validate_file(file.filename, file_size)
+                    
+                    if not is_valid:
+                        errors.append({
+                            "filename": file.filename,
+                            "error": validation_message
+                        })
+                        failed_count += 1
+                        continue
+                    
+                    # Generate unique filename
+                    safe_filename = generate_safe_filename(file.filename)
+                    file_path = get_file_path(settings.upload_dir, safe_filename)
+                    
+                    # Write file
+                    with open(file_path, "wb") as f:
+                        f.write(content)
+                    
+                    try:
+                        # Process file
+                        document = await self.knowledge_base_service.upload_file(
+                            file_path, file.filename, file_size
+                        )
+                        
+                        upload_response = UploadResponse(
+                            file_id=document.id,
+                            filename=document.filename,
+                            status=document.status,
+                            message="File uploaded successfully and processing started",
+                            file_size=document.file_size
+                        )
+                        
+                        uploads.append(upload_response)
+                        successful_count += 1
+                        
+                    except Exception as e:
+                        errors.append({
+                            "filename": file.filename,
+                            "error": str(e)
+                        })
+                        failed_count += 1
+                        
+                except Exception as e:
+                    errors.append({
+                        "filename": file.filename if file.filename else "unknown",
+                        "error": str(e)
+                    })
+                    failed_count += 1
+            
+            return BatchUploadResponse(
+                message=f"Batch upload completed. {successful_count} successful, {failed_count} failed",
+                total_files=len(files),
+                successful_uploads=successful_count,
+                failed_uploads=failed_count,
+                uploads=uploads,
+                errors=errors
+            )
+                    
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error in batch upload: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
 
     async def get_documents(self, page: int = 1, size: int = 10):
