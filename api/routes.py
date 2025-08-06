@@ -1,5 +1,6 @@
 import os
 import logging
+import json
 from datetime import datetime
 from typing import List
 from uuid import UUID
@@ -7,7 +8,7 @@ from fastapi import HTTPException, UploadFile, File, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from model.models import (
-    DocumentResponse, DocumentListResponse, ChatRequest, ChatResponse,
+    DocumentResponse, DocumentListResponse, ChatRequest, ChatResponse, ChatStreamResponse,
     AuditLogResponse, UploadResponse, ErrorResponse, BatchDeleteResponse, BatchUploadResponse
 )
 from service.knowledge_base_service import KnowledgeBaseService
@@ -23,7 +24,7 @@ class APIRoutes:
         """
         Upload file text và process thành embeddings
         
-        - **file**: File text (.txt, .md, .csv, .json) để upload
+        - **file**: File text (.txt, .md, .csv, .json, .pdf) để upload
         - **max_size**: 10MB
         """
         try:
@@ -80,7 +81,7 @@ class APIRoutes:
         """
         Upload nhiều file text và process thành embeddings
         
-        - **files**: List các file text (.txt, .md, .csv, .json) để upload
+        - **files**: List các file text (.txt, .md, .csv, .json, .pdf) để upload
         - **max_size**: 10MB per file
         - **max_files**: 50 files per request
         """
@@ -371,23 +372,119 @@ class APIRoutes:
 
     async def chat(self, request: ChatRequest):
         """
-        Chat với knowledge base
-        
-        - **question**: User question
+        Chat với knowledge base với performance monitoring
         """
+        import time
+        from uuid import uuid4
+        
+        start_time = time.time()
+        
         try:
-            response, retrieved_docs, latency_ms, chat_id = await self.knowledge_base_service.chat(
-                request.question
+            # Search relevant documents
+            relevant_docs = await self.knowledge_base_service.ai_service.search_relevant_documents(request.question)
+            
+            # Generate response
+            response = await self.knowledge_base_service.ai_service.generate_response(request.question, relevant_docs)
+            
+            # Calculate latency
+            latency_ms = int((time.time() - start_time) * 1000)
+            chat_id = uuid4()
+            
+            # Log performance metrics
+            logger.info(f"Chat completed in {latency_ms}ms with {len(relevant_docs)} documents")
+            
+            # Store audit log
+            await self.knowledge_base_service.store_audit_log(
+                chat_id, request.question, response, relevant_docs, latency_ms
             )
             
             return ChatResponse(
                 chat_id=chat_id,
                 response=response,
-                retrieved_docs=[{"id": str(doc.id), "filename": doc.filename} for doc in retrieved_docs]
+                retrieved_docs=[{"id": str(doc.id), "filename": doc.filename} for doc in relevant_docs]
             )
             
         except Exception as e:
-            logger.error(f"Error in chat: {e}")
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.error(f"Error in chat after {latency_ms}ms: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+    async def chat_stream(self, request: ChatRequest):
+        """
+        Chat streaming với knowledge base
+        """
+        import time
+        from uuid import uuid4
+        
+        start_time = time.time()
+        chat_id = uuid4()
+        full_response = ""
+        
+        try:
+            # Search relevant documents
+            relevant_docs = await self.knowledge_base_service.ai_service.search_relevant_documents(request.question)
+            
+            async def generate_stream():
+                nonlocal full_response
+                
+                try:
+                    # Generate streaming response
+                    async for chunk in self.knowledge_base_service.ai_service.generate_streaming_response(request.question, relevant_docs):
+                        full_response += chunk
+                        
+                        # Create streaming response
+                        stream_response = ChatStreamResponse(
+                            chat_id=chat_id,
+                            chunk=chunk,
+                            is_final=False,
+                            retrieved_docs=[{"id": str(doc.id), "filename": doc.filename} for doc in relevant_docs]
+                        )
+                        
+                        yield f"data: {stream_response.model_dump_json()}\n\n"
+                    
+                    # Send final chunk with is_final=True
+                    final_response = ChatStreamResponse(
+                        chat_id=chat_id,
+                        chunk="",
+                        is_final=True,
+                        retrieved_docs=[{"id": str(doc.id), "filename": doc.filename} for doc in relevant_docs]
+                    )
+                    
+                    yield f"data: {final_response.model_dump_json()}\n\n"
+                    
+                    # Calculate latency and store audit log
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    logger.info(f"Streaming chat completed in {latency_ms}ms with {len(relevant_docs)} documents")
+                    
+                    await self.knowledge_base_service.store_audit_log(
+                        chat_id, request.question, full_response, relevant_docs, latency_ms
+                    )
+                    
+                except Exception as e:
+                    error_response = ChatStreamResponse(
+                        chat_id=chat_id,
+                        chunk=f"Error: {str(e)}",
+                        is_final=True,
+                        retrieved_docs=[]
+                    )
+                    yield f"data: {error_response.model_dump_json()}\n\n"
+                    
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    logger.error(f"Error in streaming chat after {latency_ms}ms: {e}")
+            
+            return StreamingResponse(
+                generate_stream(),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Content-Type": "text/event-stream",
+                }
+            )
+            
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            logger.error(f"Error in streaming chat after {latency_ms}ms: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
 
     async def get_audit_log(self, chat_id: UUID):

@@ -21,7 +21,7 @@ class FileProcessingService:
         self.max_file_size = settings.max_file_size
         self.chunk_size = settings.chunk_size
         self.chunk_overlap = settings.chunk_overlap
-        self.supported_extensions = {'.txt', '.md', '.csv', '.json'}
+        self.supported_extensions = {'.txt', '.md', '.csv', '.json', '.pdf'}
         
         # Initialize text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -41,16 +41,50 @@ class FileProcessingService:
         
         return True, "File is valid"
 
-    async def read_file_content(self, file_path: str) -> str:
+    async def read_file_content(self, file_path: str, file_ext: str) -> str:
         """Đọc nội dung file"""
-        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-            content = await f.read()
-        return content
+        if file_ext == '.pdf':
+            return await self._extract_pdf_text(file_path)
+        else:
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+            return content
+
+    async def _extract_pdf_text(self, file_path: str) -> str:
+        """Extract text từ PDF file"""
+        try:
+            from pypdf import PdfReader
+            
+            # Read PDF file
+            reader = PdfReader(file_path)
+            text_content = []
+            
+            # Extract text from each page
+            for page_num, page in enumerate(reader.pages):
+                page_text = page.extract_text()
+                if page_text.strip():  # Only add non-empty pages
+                    text_content.append(f"--- Page {page_num + 1} ---\n{page_text}")
+            
+            # Join all pages
+            full_text = "\n\n".join(text_content)
+            
+            if not full_text.strip():
+                raise ValueError("No text content found in PDF")
+            
+            logger.info(f"Extracted text from PDF with {len(reader.pages)} pages")
+            return full_text
+            
+        except Exception as e:
+            logger.error(f"Error extracting PDF text: {e}")
+            raise ValueError(f"Failed to extract text from PDF: {str(e)}")
 
     async def process_file(self, file_path: str, filename: str, file_size: int) -> Document:
         """Process file và tạo document"""
+        # Get file extension
+        file_ext = os.path.splitext(filename)[1].lower()
+        
         # Read file content
-        content = await self.read_file_content(file_path)
+        content = await self.read_file_content(file_path, file_ext)
         
         # Create document
         doc_id = uuid4()
@@ -62,6 +96,7 @@ class FileProcessingService:
             metadata={
                 "upload_time": datetime.utcnow().isoformat(),
                 "file_path": file_path,
+                "file_type": file_ext,
                 "chunk_size": self.chunk_size,
                 "chunk_overlap": self.chunk_overlap
             },

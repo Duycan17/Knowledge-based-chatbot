@@ -4,7 +4,7 @@ Hệ thống knowledge base containerized sử dụng FastAPI, Neon PostgreSQL v
 
 ## 🚀 Features
 
-- **File Upload**: Upload và process file text (.txt, .md, .csv, .json)
+- **File Upload**: Upload và process file text (.txt, .md, .csv, .json, .pdf)
 - **Vector Search**: Similarity search với pgvector
 - **RAG Pipeline**: Retrieval-Augmented Generation với Gemini
 - **Audit Logging**: Log tất cả chat interactions
@@ -84,6 +84,11 @@ Upload file text và process thành embeddings.
 curl -X POST "http://localhost:8000/knowledge/upload" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@document.txt"
+
+# Hoặc upload PDF
+curl -X POST "http://localhost:8000/knowledge/upload" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@document.pdf"
 ```
 
 **Response:**

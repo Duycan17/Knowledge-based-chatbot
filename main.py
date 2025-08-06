@@ -1,13 +1,14 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from dotenv import load_dotenv
+from typing import List
 
 from dbconnection.database import db_manager
 from service.knowledge_base_service import KnowledgeBaseService
 from api.routes import APIRoutes
-
+from model.models import ChatRequest
 # Load environment variables
 load_dotenv()
 
@@ -63,17 +64,26 @@ async def root():
     return {"message": "Knowledge Base API is running", "status": "healthy"}
 
 
+# @app.post("/knowledge/upload")
+# async def upload_file(background_tasks, file):
+#     """Upload file endpoint"""
+#     return await api_routes.upload_file(background_tasks, file)
+
+
+# @app.post("/knowledge/upload/batch")
+# async def upload_multiple_files(background_tasks, files):
+#     """Upload multiple files endpoint"""
+#     return await api_routes.upload_multiple_files(background_tasks, files)
+
 @app.post("/knowledge/upload")
-async def upload_file(background_tasks, file):
+async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """Upload file endpoint"""
     return await api_routes.upload_file(background_tasks, file)
 
-
 @app.post("/knowledge/upload/batch")
-async def upload_multiple_files(background_tasks, files):
+async def upload_multiple_files(background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)):
     """Upload multiple files endpoint"""
     return await api_routes.upload_multiple_files(background_tasks, files)
-
 
 @app.get("/knowledge")
 async def get_documents(page: int = 1, size: int = 10):
@@ -118,9 +128,15 @@ async def retry_document_processing(doc_id):
 
 
 @app.post("/chat")
-async def chat(request):
+async def chat(request: ChatRequest):
     """Chat endpoint"""
     return await api_routes.chat(request)
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """Chat streaming endpoint"""
+    return await api_routes.chat_stream(request)
 
 
 @app.get("/audit/{chat_id}")

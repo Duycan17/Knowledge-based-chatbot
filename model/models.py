@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -33,9 +33,10 @@ class DocumentResponse(DocumentBase):
     created_at: datetime
     updated_at: datetime
     status: FileStatus = FileStatus.COMPLETED
-
-    class Config:
-        from_attributes = True
+    
+    model_config = {
+        "from_attributes": True
+    }
 
 
 class DocumentListResponse(BaseModel):
@@ -47,11 +48,19 @@ class DocumentListResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
+    stream: bool = Field(default=False, description="Enable streaming response")
 
 
 class ChatResponse(BaseModel):
     chat_id: UUID
     response: str
+    retrieved_docs: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class ChatStreamResponse(BaseModel):
+    chat_id: UUID
+    chunk: str
+    is_final: bool = False
     retrieved_docs: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -65,8 +74,10 @@ class AuditLogResponse(BaseModel):
     feedback: Optional[str] = None
     model_confidence: Optional[float] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True,  # Migrated from Config class
+        "protected_namespaces": ()  # Retained from original model_config
+    }
 
 
 class UploadResponse(BaseModel):
@@ -141,4 +152,4 @@ class AuditLog:
         self.latency_ms = latency_ms
         self.timestamp = timestamp or datetime.utcnow()
         self.feedback = feedback
-        self.model_confidence = model_confidence 
+        self.model_confidence = model_confidence

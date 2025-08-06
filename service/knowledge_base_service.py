@@ -86,7 +86,7 @@ class KnowledgeBaseService:
         return results
 
     async def chat(self, question: str) -> tuple[str, List[Document], int, UUID]:
-        """Chat với knowledge base"""
+        """Chat với knowledge base - optimized version"""
         import time
         from uuid import uuid4
         
@@ -100,23 +100,29 @@ class KnowledgeBaseService:
         
         # Calculate latency
         latency_ms = int((time.time() - start_time) * 1000)
-        
-        # Generate chat ID
         chat_id = uuid4()
         
-        # Create audit log
-        audit_log = AuditLog(
-            chat_id=chat_id,
-            question=question,
-            response=response,
-            retrieved_docs=[{"id": str(doc.id), "filename": doc.filename} for doc in relevant_docs],
-            latency_ms=latency_ms
-        )
-        
-        # Save audit log
-        await db_manager.insert_audit_log(audit_log)
-        
         return response, relevant_docs, latency_ms, chat_id
+
+    async def store_audit_log(self, chat_id: UUID, question: str, response: str, 
+                             retrieved_docs: List[Document], latency_ms: int):
+        """Store audit log với performance metrics"""
+        try:
+            from model.models import AuditLog
+            
+            audit_log = AuditLog(
+                chat_id=chat_id,
+                question=question,
+                response=response,
+                retrieved_docs=[{"id": str(doc.id), "filename": doc.filename} for doc in retrieved_docs],
+                latency_ms=latency_ms
+            )
+            
+            await db_manager.insert_audit_log(audit_log)
+            
+        except Exception as e:
+            logger.error(f"Error storing audit log: {e}")
+            # Don't fail the main request if audit logging fails
 
     async def get_document_chunks(self, doc_id: UUID) -> List[Document]:
         """Lấy chunks của document"""
