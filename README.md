@@ -37,8 +37,6 @@ API will be served at: [http://localhost:8000](http://localhost:8000)
 
 ## 🧪 Sample API Requests
 
-> Use `curl` or Postman. Replace `{document_id}` and `{chat_id}` with actual UUIDs from previous API calls.
-
 ---
 
 ### 📁 Upload File
@@ -120,13 +118,6 @@ curl -X DELETE http://localhost:8000/documents/batch \
   ]'
 ```
 
----
-
-### 🔁 Retry Document Processing
-
-```bash
-curl -X POST http://localhost:8000/documents/{document_id}/retry
-```
 
 ---
 
